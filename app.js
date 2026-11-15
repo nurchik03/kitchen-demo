@@ -105,7 +105,7 @@ db.collection("employees").onSnapshot((snapshot) => {
   });
   renderEmployees();
   updateAuthUI();
-  updateAdminEmployeeSelect();
+  updateAdminEmployeeSelects();
 });
 
 db.collection("logs")
@@ -152,7 +152,7 @@ function switchTab(id) {
       renderEmployees();
       renderAdminAnnouncements();
       updateWeeklyChart();
-      updateAdminEmployeeSelect();
+      updateAdminEmployeeSelects();
     } else {
       document.getElementById("admin-lock").classList.remove("hidden");
       document.getElementById("admin-content").classList.add("hidden");
@@ -455,7 +455,7 @@ function tryAdminUnlock() {
     renderEmployees();
     renderAdminAnnouncements();
     updateWeeklyChart();
-    updateAdminEmployeeSelect();
+    updateAdminEmployeeSelects();
   } else {
     msg.textContent = "❌ Неверный пароль.";
   }
@@ -634,21 +634,38 @@ function renderEmployees() {
   });
 }
 
-/* ================= ОТЧЕТЫ ПО КОНКРЕТНОМУ СОТРУДНИКУ В АДМИНКЕ ================= */
-function updateAdminEmployeeSelect() {
-  const select = document.getElementById("admin-employee-select");
-  if (!select) return;
+/* ================= ОБНОВЛЕНИЕ ВСЕХ ВЫПАДАЮЩИХ СПИСКОВ СОТРУДНИКОВ ================= */
+function updateAdminEmployeeSelects() {
+  // Список для детального отчета
+  const selectUser = document.getElementById("admin-employee-select");
+  // Список для графика
+  const selectChart = document.getElementById("chart-employee-select");
 
-  const currentVal = select.value;
-  select.innerHTML = '<option value="">-- Выберите сотрудника --</option>';
+  if (selectUser) {
+    const currentVal = selectUser.value;
+    selectUser.innerHTML =
+      '<option value="">-- Выберите сотрудника --</option>';
+    employeesCache.forEach((e) => {
+      const opt = document.createElement("option");
+      opt.value = e.name;
+      opt.textContent = e.name;
+      if (e.name === currentVal) opt.selected = true;
+      selectUser.appendChild(opt);
+    });
+  }
 
-  employeesCache.forEach((e) => {
-    const opt = document.createElement("option");
-    opt.value = e.name;
-    opt.textContent = e.name;
-    if (e.name === currentVal) opt.selected = true;
-    select.appendChild(opt);
-  });
+  if (selectChart) {
+    const currentVal = selectChart.value;
+    selectChart.innerHTML =
+      '<option value="all">Все сотрудники (общий)</option>';
+    employeesCache.forEach((e) => {
+      const opt = document.createElement("option");
+      opt.value = e.name;
+      opt.textContent = e.name;
+      if (e.name === currentVal) opt.selected = true;
+      selectChart.appendChild(opt);
+    });
+  }
 }
 
 function renderAdminUserHistory() {
@@ -686,6 +703,9 @@ function renderAdminUserHistory() {
 document
   .getElementById("admin-employee-select")
   .addEventListener("change", renderAdminUserHistory);
+document
+  .getElementById("chart-employee-select")
+  .addEventListener("change", updateWeeklyChart);
 
 document.getElementById("export-user-csv").addEventListener("click", () => {
   const select = document.getElementById("admin-employee-select");
@@ -716,7 +736,7 @@ document.getElementById("export-user-csv").addEventListener("click", () => {
   a.click();
 });
 
-/* ================= ЭКСПООРТ ОБЩЕГО ЖУРНАЛА (ДЕНЬ / НЕДЕЛЯ / МЕСЯЦ) ================= */
+/* ================= ЭКСПОРТ ОБЩЕГО ЖУРНАЛА ================= */
 document.getElementById("export-csv").addEventListener("click", () => {
   const period = document.getElementById("export-period").value;
   const dateFilterInput = document.getElementById("filter-date").value;
@@ -736,7 +756,6 @@ document.getElementById("export-csv").addEventListener("click", () => {
     const monthAgo = nowMs - 30 * dayMs;
     filteredLogs = logsCache.filter((e) => e.ts >= monthAgo);
   }
-  // Если period === "all", экспортируем вообще всё
 
   if (filteredLogs.length === 0) {
     alert("За выбранный период нет записей для экспорта.");
@@ -764,6 +783,9 @@ function updateWeeklyChart() {
   const ctx = document.getElementById("weeklyChart");
   if (!ctx) return;
 
+  const chartSelect = document.getElementById("chart-employee-select");
+  const selectedEmp = chartSelect ? chartSelect.value : "all";
+
   const labels = [];
   const dataCounts = [];
 
@@ -774,13 +796,25 @@ function updateWeeklyChart() {
     labels.push(
       d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
     );
-    dataCounts.push(
-      logsCache.filter((l) => l.date === dateStr && l.type === "in").length,
-    );
+
+    // Фильтрация входов по дню и (если выбран) по конкретному сотруднику
+    const dayInCount = logsCache.filter((l) => {
+      const matchDate = l.date === dateStr && l.type === "in";
+      if (selectedEmp === "all") return matchDate;
+      return matchDate && l.name === selectedEmp;
+    }).length;
+
+    dataCounts.push(dayInCount);
   }
+
+  const chartLabel =
+    selectedEmp === "all"
+      ? "Входов за день (все)"
+      : `Входов за день (${selectedEmp})`;
 
   if (weeklyChartInstance) {
     weeklyChartInstance.data.labels = labels;
+    weeklyChartInstance.data.datasets[0].label = chartLabel;
     weeklyChartInstance.data.datasets[0].data = dataCounts;
     weeklyChartInstance.update();
   } else {
@@ -790,7 +824,7 @@ function updateWeeklyChart() {
         labels: labels,
         datasets: [
           {
-            label: "Входов за день",
+            label: chartLabel,
             data: dataCounts,
             backgroundColor: "#4f46e5",
             borderRadius: 8,
